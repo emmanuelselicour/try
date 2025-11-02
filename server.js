@@ -1,4 +1,5 @@
-/*  ==========  Bet-Adviser-Bot  ==========  */
+/*  =================  BET-ADVISER-BOT  =================  */
+/*  Back-end only – place this code in server.js on Render  */
 require('dotenv').config();
 const express = require('express');
 const axios   = require('axios');
@@ -9,16 +10,17 @@ const app  = express();
 app.use(cors());
 app.use(express.json());
 
+/* ---------- CONFIG ---------- */
 const PORT   = process.env.PORT  || 3000;
 const ODDS   = process.env.THE_ODDS_API_KEY;
-const WEBAPP = process.env.WEB_APP_URL;
+const WEBAPP = process.env.WEB_APP_URL;   // front URL (Netlify)
 const bot    = new TelegramBot(process.env.TELEGRAM_TOKEN, {polling:true});
 
-/* ---------- utils ---------- */
+/* ---------- UTILS ---------- */
 const poisson = (k, λ) => Math.exp(-λ) * Math.pow(λ, k) / factorial(k);
 function factorial(n){ return n<2?1:n*factorial(n); }
 function predictGoals(){
-  return [1.4, 1.1]; // quick stub
+  return [1.4, 1.1]; // stub – replace by real form/xG
 }
 function poissonMatch(hA, aA){
   let p = {home:0, draw:0, away:0};
@@ -34,7 +36,7 @@ function kellyStake(p, odd, bank=1000, kDiv=2){
   return ((edge/(odd-1))/kDiv * bank).toFixed(2);
 }
 
-/* ---------- live odds cache ---------- */
+/* ---------- LIVE ODDS CACHE (5 min) ---------- */
 let LIVE_FIXTURES = [];
 let LAST_FETCH = 0;
 async function fetchLive(){
@@ -56,40 +58,10 @@ async function fetchLive(){
 }
 fetchLive(); setInterval(fetchLive, 5*60*1000);
 
-/* ---------- web app ---------- */
-app.get('/webapp', (_,res)=>{
-res.send(`<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8"><title>Bet-Adviser</title>
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <style>body{font-family:Arial,Helvetica,sans-serif;background:#111;color:#eee;margin:0;padding:1rem}h1,h2{color:#00ff90}.card{background:#222;border-radius:8px;padding:1rem;margin:.5rem 0}button{background:#00ff90;border:none;padding:.7rem 1.2rem;border-radius:4px;font-weight:bold}</style>
-</head>
-<body>
-  <h1>📊 Live Matches</h1><div id="list">loading…</div>
-  <div id="about" style="margin-top:2rem;font-size:.9rem;color:#aaa"><h2>ℹ️ About</h2><p>Bot developed by <strong>True-Manno</strong><br>Data refreshed every 5 min.</p></div>
-  <script>
-    async function load(){
-      const res = await fetch('/api/live'); const matches = await res.json();
-      const box=document.getElementById('list');
-      if(!matches.length) return box.innerHTML='<p>No match available now.</p>';
-      box.innerHTML=matches.map(m=>\`
-        <div class="card">
-          <strong>\${m.home}</strong> vs <strong>\${m.away}</strong><br>
-          Kick-off: \${new Date(m.kickoff).toLocaleString()}<br>
-          Odds: 1 \${m.odds['1']} | X \${m.odds['X']} | 2 \${m.odds['2']}
-          <br><button onclick="getAdvice('\${m.home}','\${m.away}',\${m.odds['1']},\${m.odds['X']},\${m.odds['2']})">Get advice</button>
-        </div>\`).join('');
-    }
-    async function getAdvice(h,a,o1,oX,o2){
-      const r=await fetch('/advise',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({home:h,away:a,odd1:o1,oddX:oX,odd2:o2})});
-      const j=await r.json(); alert(JSON.stringify(j.advice,null,2));
-    }
-    load(); setInterval(load,120000);
-  </script>
-</body></html>`);
-});
+/* ---------- API ROUTES ---------- */
+// ---- live list ----
 app.get('/api/live', (_,res)=>res.json(LIVE_FIXTURES));
+// ---- advice ----
 app.post('/advise', (req,res)=>{
   const {home,away,odd1,oddX,odd2,bankroll=1000} = req.body;
   const probs = poissonMatch(...predictGoals());
@@ -101,7 +73,7 @@ app.post('/advise', (req,res)=>{
   res.json({match:`${home} vs ${away}`,advice});
 });
 
-/* ---------- telegram ---------- */
+/* ---------- TELEGRAM ---------- */
 const KB = {
   keyboard:[[{text:'📊 Get live advice',web_app:{url:WEBAPP+'/webapp'}}],
             [{text:'ℹ️ About bot',      web_app:{url:WEBAPP+'/webapp#about'}}]],
@@ -124,6 +96,7 @@ bot.onText(/\/menu/, (msg)=>{
     `💬 Need help? Contact @TrueMannooo`,
     {parse_mode:'Markdown', reply_markup:KB});
 });
+// --- handle /advise (power users) ---
 bot.onText(/\/advise/, async (msg)=>{
   const args=msg.text.split(' ');
   if(args.length<5)return bot.sendMessage(msg.chat.id,'Usage: /advise TeamA-TeamB odd1 oddX odd2');
@@ -135,12 +108,17 @@ bot.onText(/\/advise/, async (msg)=>{
     Object.entries(data.advice).forEach(([k,v])=>{
       txt+=`${k}: prob ${v.prob}% | edge ${v.edge}% | stake ${v.stake}${v.bet?' ✅':' ❌'}\n`;
     });
-    bot.sendMessage(msg.chat.id, txt);   // <- MarkdownV2 removed = no escape needed
+    bot.sendMessage(msg.chat.id, txt);
   }catch(e){
     console.error('[BOT]',e.message);
     bot.sendMessage(msg.chat.id,'❌ Erreur: '+e.message);
   }
 });
+// --- answer pre-filled message (deep-link) ---
+bot.onText(/\/start (.+)/, (msg, match)=>{
+  const text = decodeURIComponent(match[1]);
+  bot.sendMessage(msg.chat.id, text);
+});
 
-/* ---------- start http ---------- */
+/* ---------- START HTTP ---------- */
 app.listen(PORT, ()=>console.log(`[HTTP] listening on :${PORT}`));
