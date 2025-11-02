@@ -22,10 +22,10 @@ function factorial(n){ return n<2?1:n*factorial(n); }
 function predictGoals(){
   return [1.4, 1.1]; // stub – replace by real form/xG
 }
-function poissonMatch(hA, aA){
+function poissonMatch(homeAvg, awayAvg){
   let p = {home:0, draw:0, away:0};
   for(let h=0;h<7;h++)for(let a=0;a<7;a++){
-     const pr = poisson(h,hA)*poisson(a,aA);
+     const pr = poisson(h,homeAvg)*poisson(a,awayAvg);
      if(h>a)p.home+=pr; else if(h===a)p.draw+=pr; else p.away+=pr;
   }
   return p;
@@ -96,7 +96,6 @@ bot.onText(/\/menu/, (msg)=>{
     `💬 Need help? Contact @TrueMannooo`,
     {parse_mode:'Markdown', reply_markup:KB});
 });
-// --- handle /advise (power users) ---
 bot.onText(/\/advise/, async (msg)=>{
   const args=msg.text.split(' ');
   if(args.length<5)return bot.sendMessage(msg.chat.id,'Usage: /advise TeamA-TeamB odd1 oddX odd2');
