@@ -6,10 +6,10 @@ const express = require('express');
 const axios   = require('axios');
 const cors    = require('cors');
 const TelegramBot = require('node-telegram-bot-api');
+const path  = require('path');
 
 const app  = express();
 app.use(cors());
-app.use(express.static('public'));          // mini-site
 app.use(express.json());
 
 /*  ----------  CONFIG  ----------  */
@@ -55,7 +55,7 @@ async function fetchLiveOdds(){
       away:m.away_team,
       kickoff:m.commence_time,
       odds:m.bookmakers[0]?.markets[0]?.outcomes.reduce((a,o)=>{
-        const key = o.name===m.home_team ? '1' : o.name===m.away_team ? '2' : 'X';
+        const key = o.name===m.home_team ? '1' : o.name===m.away_team ? '2':'X';
         a[key]=o.price; return a;
       },{})
     }));
@@ -67,13 +67,52 @@ setInterval(fetchLiveOdds, 5*60*1000);
 
 /*  ----------  WEB-APP ROUTES  ----------  */
 // ---- mini-site ----
-app.get('/webapp', (_,res)=>res.sendFile(__dirname+'/public/index.html'));
+app.get('/webapp', (_,res)=>res.send(`
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><title>Bet-Adviser WebApp</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <style>
+    body{font-family:Arial,Helvetica,sans-serif;background:#111;color:#eee;margin:0;padding:1rem}
+    h1,h2{color:#00ff90}.card{background:#222;border-radius:8px;padding:1rem;margin:.5rem 0}
+    button{background:#00ff90;border:none;padding:.7rem 1.2rem;border-radius:4px;font-weight:bold}
+  </style>
+</head>
+<body>
+  <h1>📊 Live Matches</h1>
+  <div id="list">loading...</div>
+  <div id="about" style="margin-top:2rem;font-size:.9rem;color:#aaa">
+    <h2>ℹ️ About</h2><p>Bot developed by <strong>True-Manno</strong><br>Data refreshed every 5 min.</p>
+  </div>
+  <script>
+    async function load(){
+      const res = await fetch('/api/live');
+      const matches = await res.json();
+      const box=document.getElementById('list');
+      if(!matches.length) return box.innerHTML='<p>No match available now.</p>';
+      box.innerHTML=matches.map(m=>`
+        <div class="card">
+          <strong>${m.home}</strong> vs <strong>${m.away}</strong><br>
+          Kick-off: ${new Date(m.kickoff).toLocaleString()}<br>
+          Odds: 1 ${m.odds['1']} | X ${m.odds['X']} | 2 ${m.odds['2']}
+          <br><button onclick="getAdvice('${m.home}','${m.away}',${m.odds['1']},${m.odds['X']},${m.odds['2']})">Get advice</button>
+        </div>`).join('');
+    }
+    async function getAdvice(h,a,o1,oX,o2){
+      const r=await fetch('/advise',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({home:h,away:a,odd1:o1,oddX:oX,odd2:o2})});
+      const j=await r.json(); alert(JSON.stringify(j.advice,null,2));
+    }
+    load(); setInterval(load,120000);
+  </script>
+</body>
+</html>`));
 // ---- api live ----
 app.get('/api/live', (_,res)=>res.json(LIVE_FIXTURES));
 // ---- about ----
 app.get('/api/about', (_,res)=>res.json({author:'True-Manno',version:'1.0.0'}));
 
-/*  ----  SAME ADVISE USED BY BOT  ----  */
+/*  ----  ADVISE ENDPOINT  ----  */
 app.post('/advise', (req,res)=>{
   const {home,away,odd1,oddX,odd2,bankroll=1000} = req.body;
   const [hA,aA] = predictGoals();
@@ -126,7 +165,6 @@ bot.onText(/\/menu/, (msg)=>{
   bot.sendMessage(msg.chat.id, txt, {parse_mode:'Markdown',reply_markup:KEYBOARD});
 });
 
-/*  ----  KEEP /advise FOR POWER USERS  ----  */
 bot.onText(/\/advise/, async (msg)=>{
   const args = msg.text.split(' ');
   if(args.length<5) return bot.sendMessage(msg.chat.id,
@@ -134,7 +172,7 @@ bot.onText(/\/advise/, async (msg)=>{
   const [teams,odd1,oddX,odd2] = args.slice(1);
   const [home,away] = teams.split('-');
   try{
-    const {data} = await axios.post(`${WEBAPP}/advise`,{home,away,odd1,oddX,odd2});
+    const {data}=await axios.post(`${WEBAPP}/advise`,{home,away,odd1,oddX,odd2});
     let txt='🔮 *Conseil*\\n';
     Object.entries(data.advice).forEach(([k,v])=>{
       txt+=`${k}: prob ${v.prob}% | edge ${v.edge}% | stake ${v.stake}${v.bet?' ✅':' ❌'}\\n`;
