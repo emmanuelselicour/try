@@ -6,7 +6,6 @@ const express = require('express');
 const axios   = require('axios');
 const cors    = require('cors');
 const TelegramBot = require('node-telegram-bot-api');
-const path  = require('path');
 
 const app  = express();
 app.use(cors());
@@ -67,7 +66,8 @@ setInterval(fetchLiveOdds, 5*60*1000);
 
 /*  ----------  WEB-APP ROUTES  ----------  */
 // ---- mini-site ----
-app.get('/webapp', (_,res)=>res.send(`
+app.get('/webapp', (_,res)=>{
+  res.send(`
 <!doctype html>
 <html lang="en">
 <head>
@@ -81,7 +81,7 @@ app.get('/webapp', (_,res)=>res.send(`
 </head>
 <body>
   <h1>📊 Live Matches</h1>
-  <div id="list">loading...</div>
+  <div id="list">loading…</div>
   <div id="about" style="margin-top:2rem;font-size:.9rem;color:#aaa">
     <h2>ℹ️ About</h2><p>Bot developed by <strong>True-Manno</strong><br>Data refreshed every 5 min.</p>
   </div>
@@ -91,13 +91,13 @@ app.get('/webapp', (_,res)=>res.send(`
       const matches = await res.json();
       const box=document.getElementById('list');
       if(!matches.length) return box.innerHTML='<p>No match available now.</p>';
-      box.innerHTML=matches.map(m=>`
+      box.innerHTML=matches.map(m=>'
         <div class="card">
           <strong>${m.home}</strong> vs <strong>${m.away}</strong><br>
           Kick-off: ${new Date(m.kickoff).toLocaleString()}<br>
           Odds: 1 ${m.odds['1']} | X ${m.odds['X']} | 2 ${m.odds['2']}
-          <br><button onclick="getAdvice('${m.home}','${m.away}',${m.odds['1']},${m.odds['X']},${m.odds['2']})">Get advice</button>
-        </div>`).join('');
+          <br><button onclick="getAdvice(\'${m.home}\',\'${m.away}\',${m.odds['1']},${m.odds['X']},${m.odds['2']})">Get advice</button>
+        </div>').join('');
     }
     async function getAdvice(h,a,o1,oX,o2){
       const r=await fetch('/advise',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({home:h,away:a,odd1:o1,oddX:oX,odd2:o2})});
@@ -106,7 +106,8 @@ app.get('/webapp', (_,res)=>res.send(`
     load(); setInterval(load,120000);
   </script>
 </body>
-</html>`));
+</html>`);
+});
 // ---- api live ----
 app.get('/api/live', (_,res)=>res.json(LIVE_FIXTURES));
 // ---- about ----
